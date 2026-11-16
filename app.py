@@ -1,84 +1,125 @@
 import os
-import requests
+import json
+from datetime import datetime
 from flask import Flask, request, jsonify
 from groq import Groq
+from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
 api_key = os.environ.get("GROQ_API_KEY")
-if not api_key:
-    print("¡ERROR: Falta la variable GROQ_API_KEY!")
-    client = None
-else:
-    client = Groq(api_key=api_key)
-
+client = Groq(api_key=api_key) if api_key else None
 historial_chats = {}
 
 SYSTEM_PROMPT = """
-Eres el clon digital de Viviana Marín: mujer colombiana, profesional en negocios internacionales, empresaria en Medellín y fundadora de la comunidad "Adiós Dolor con Viviana Marín". Eres culta, inteligente, cálida, resolutiva y con excelente sentido común.
+Eres el clon digital autónomo de Viviana Marín, empresaria, estratega comercial y líder de expansión digital en Medellín, Colombia.
 
-REGLAS DE INTELIGENCIA Y AUTONOMÍA:
-1. RESPONDE DE TODO CON CRITERIO Y BÚSQUEDA WEB: Eres una persona integral. Si un amigo, familiar o desconocido te pregunta por el clima, geografía (ej. la montaña más alta), historia, noticias, cocina o cualquier tema general, usa tu búsqueda web en vivo para dar una respuesta exacta, amena y bien informada. NO metas publicidad ni hables de productos si la conversación no tiene relación con salud, bienestar o negocios.
-2. ADAPTA TU TONO:
-   - Con familiares o amigos: cercana, cariñosa, natural y descomplicada, como la Viviana real en Medellín.
-   - Con consultas generales: segura, culta y amable.
-3. CUANDO SÍ HAYA INTERÉS EN BIENESTAR, SALUD O NEGOCIOS:
-   - Si mencionan dolores (cabeza, hígado, articulaciones, cansancio, inflamación) o preguntan por salud/negocios, activa tu faceta empresarial.
-   - Presenta MultyDrink Be Healthy (registro INVIMA NSA-0019488-2025, con Ganoderma lucidum, resveratrol, mucílago de café, té negro y miel de agave) destacando sus beneficios celulares y multifuncionales (oxigenación, desinflamación, limpieza y vitalidad). NUNCA envíes a nadie al médico.
-   - Precios vigentes: Caja individual (21 sobres) en $120.000 COP y paquete completo de 6 cajas en $450.000 COP ($75.000 cada caja).
-   - Prueba social: Invítalos a ver testimonios en Facebook "Adiós Dolor con Viviana Marín".
-4. ESCALAMIENTO A LA VIVIANA REAL:
-   - Si piden llamada telefónica, un asunto privado urgente, o ya están listos para pagar y coordinar despacho, responde: "Un momento, este punto te lo resuelve directamente Viviana Marín; ya mismo me comunico con ella para que te atienda personalmente."
-5. FORMATO WHATSAPP: Máximo 3 párrafos cortos, tono colombiano natural. Nunca digas que eres un bot o IA.
+TU NIVEL DE INTELIGENCIA Y AUTONOMÍA:
+1. DOMINIO TOTAL DE TEMAS: Respondes con criterio profundo, brillante y natural sobre cualquier tema que te pregunten: noticias actuales, clima, recetas, ciencia, tecnología, cultura, matemáticas, consejos de vida o negocios. NUNCA evadas una pregunta general ni pidas ayuda humana para temas que puedes resolver tú misma.
+2. CONECTIVIDAD EN TIEMPO REAL: Tienes acceso a búsqueda en internet. Si el usuario pregunta por datos actuales (clima, precios, noticias, eventos, resultados deportivos, información de hoy), usa tu herramienta de búsqueda para dar datos exactos y actualizados.
+3. TONO Y PERSONALIDAD: Hablas como una mujer paisa culta, cercana, carismática, directa y resolutiva. Adapta tu lenguaje: cálida con conocidos, ejecutiva y persuasiva con clientes. Evita sonar robótica o repetitiva; sé concisa pero sustanciosa (máximo 3 o 4 líneas por mensaje para WhatsApp).
+4. CONOCIMIENTO DE MARCA (MULTYDRINK BE HEALTHY): Si la conversación gira en torno a bienestar, salud, cansancio, dolores, energía o emprendimiento, asesora de forma experta sobre los beneficios de MultyDrink Be Healthy y sus oportunidades de distribución.
+5. REGLA DE ESCALAMIENTO ESTRICTA: ÚNICAMENTE cuando el cliente pida cerrar una compra directa, agendar una cita presencial, enviar un comprobante de pago o tratar un asunto privado urgente que requiera la intervención física de Viviana, responde lo necesario y cierra con: "Un momento, este punto te lo resuelve directamente Viviana Marín; ya mismo me comunico con ella para que te atienda personalmente." Para TODO lo demás, resuélvelo tú misma al 100%.
 """
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_en_internet",
+            "description": "Busca información en tiempo real en internet sobre noticias, clima, precios, datos actuales, lugares o cualquier consulta que requiera información actualizada.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "consulta": {
+                        "type": "string",
+                        "description": "Términos de búsqueda claros y precisos."
+                    }
+                },
+                "required": ["consulta"]
+            }
+        }
+    }
+]
+
+def ejecutar_busqueda(consulta):
+    try:
+        with DDGS() as ddgs:
+            resultados = list(ddgs.text(consulta, region="co-es", max_results=4))
+            if not resultados:
+                return "No se encontraron resultados recientes."
+            texto = "\n".join([f"- {r['title']}: {r['body']}" for r in resultados])
+            return texto
+    except Exception as e:
+        return f"Error al consultar internet: {str(e)}"
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Clon Inteligente de Viviana Marín activo y listo", 200
+    return "Clon Inteligente Viviana Marín - Activo y Conectado", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     if not client:
-        return jsonify({"replies": [{"message": "Error de configuración en el servidor (Falta API Key)."}]})
-        
+        return jsonify({"replies": [{"message": "Error: Falta configurar GROQ_API_KEY en Render."}]})
+
     data = request.json or {}
-    remitente = data.get("query", {}).get("sender", "contacto_general")
-    mensaje = data.get("query", {}).get("message", "") or data.get("message", "")
+    query = data.get("query", {})
+    remitente = query.get("sender", "usuario_general")
+    mensaje = query.get("message", "").strip()
 
     if not mensaje:
-        return jsonify({"replies": [{"message": "¡Hola! ¿Cómo estás? Cuéntame en qué te puedo ayudar hoy."}]})
+        return jsonify({"replies": []})
+
+    fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M")
+    prompt_con_fecha = f"{SYSTEM_PROMPT}\nFecha y hora actual en Colombia: {fecha_actual}."
 
     historial = historial_chats.get(remitente, [])
-    mensajes_api = [{"role": "system", "content": SYSTEM_PROMPT}]
-    mensajes_api.extend(historial[-10:])
-    mensajes_api.append({"role": "user", "content": mensaje})
+    mensajes = [{"role": "system", "content": prompt_con_fecha}] + historial[-8:] + [{"role": "user", "content": mensaje}]
 
     try:
-        chat_completion = client.chat.completions.create(
-            messages=mensajes_api,
-            model="compound-beta",
-            temperature=0.65,
+        respuesta_modelo = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=mensajes,
+            tools=tools,
+            tool_choice="auto",
+            temperature=0.6,
             max_tokens=600
         )
-        respuesta = chat_completion.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Error en API de Groq: {e}")
-        try:
-            chat_completion = client.chat.completions.create(
-                messages=mensajes_api,
+
+        msg_objeto = respuesta_modelo.choices[0].message
+
+        if msg_objeto.tool_calls:
+            mensajes.append(msg_objeto)
+            for tool_call in msg_objeto.tool_calls:
+                if tool_call.function.name == "buscar_en_internet":
+                    args = json.loads(tool_call.function.arguments)
+                    info_web = ejecutar_busqueda(args.get("consulta", mensaje))
+                    mensajes.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": "buscar_en_internet",
+                        "content": info_web
+                    })
+
+            segunda_respuesta = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                temperature=0.65,
+                messages=mensajes,
+                temperature=0.6,
                 max_tokens=600
             )
-            respuesta = chat_completion.choices[0].message.content.strip()
-        except Exception:
-            respuesta = "Un momento, este punto te lo resuelve directamente Viviana Marín; ya mismo me comunico con ella para que te atienda personalmente."
+            texto_final = segunda_respuesta.choices[0].message.content.strip()
+        else:
+            texto_final = msg_objeto.content.strip()
 
-    historial.append({"role": "user", "content": mensaje})
-    historial.append({"role": "assistant", "content": respuesta})
-    historial_chats[remitente] = historial[-12:]
+    except Exception as e:
+        texto_final = "Dame un segundo que estoy procesando la información, ¿me repites por favor?"
 
-    return jsonify({"replies": [{"message": respuesta}]})
+    historial_chats[remitente] = (
+        historial + 
+        [{"role": "user", "content": mensaje}, {"role": "assistant", "content": texto_final}]
+    )[-10:]
+
+    return jsonify({"replies": [{"message": texto_final}]})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
