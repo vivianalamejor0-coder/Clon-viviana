@@ -97,7 +97,7 @@ def webhook():
         # Primera llamada de razonamiento con soporte de herramientas
         try:
             respuesta = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-70b-versatile",
                 messages=mensajes,
                 tools=HERRAMIENTAS,
                 tool_choice="auto",
@@ -107,7 +107,7 @@ def webhook():
         except Exception:
             # Respaldo automático sin herramientas si el modelo falla al formatear tool_calls
             respuesta = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-70b-versatile",
                 messages=mensajes,
                 temperature=0.7,
                 max_tokens=500
@@ -144,7 +144,7 @@ def webhook():
                     })
 
             segunda_respuesta = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-70b-versatile",
                 messages=mensajes,
                 temperature=0.7,
                 max_tokens=500
@@ -165,7 +165,6 @@ def webhook():
         }), 200
 
     except Exception as e:
-        # Muestra el diagnóstico real en lugar de repetir una frase fija
         return jsonify({
             "replies": [
                 {"message": f"[Diagnóstico Clon]: {type(e).__name__} - {str(e)}"}
