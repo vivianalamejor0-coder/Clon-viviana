@@ -1,101 +1,106 @@
 import os
-import json
+import re
+from datetime import datetime
 from flask import Flask, request, jsonify
 from groq import Groq
 from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
+# 1. Validación estricta de credenciales
 api_key = os.environ.get("GROQ_API_KEY", "").strip()
 client = Groq(api_key=api_key) if api_key else None
 
+# 2. Memoria conversacional aislada por remitente
 historial_usuarios = {}
 
-SYSTEM_PROMPT = """Eres el asistente virtual inteligente y clon digital de Viviana Marín Jiménez.
-Eres cálida, profesional, empática, perspicaz y resuelves dudas con criterio propio y naturalidad.
-Respondes mensajes de WhatsApp de forma clara, cercana y persuasiva, adaptándote al contexto de la conversación sin sonar robótica ni repetitiva.
-Si te preguntan por temas de bienestar, liderazgo, emprendimiento o productos, orientas con seguridad y calidez.
-Mantén las respuestas concisas y naturales para chat (máximo 2 o 3 párrafos cortos), usando un tono conversacional colombiano profesional."""
+def construir_system_prompt() -> str:
+    fecha_actual = datetime.now().strftime("%d/%m/%Y")
+    return f"""Eres el clon digital e inteligencia virtual de Viviana Marín Jiménez. Fecha actual: {fecha_actual}.
+
+PERSONALIDAD Y CRITERIO:
+- Eres cálida, cercana, empática, perspicaz y profesional, con un trato natural estilo colombiano.
+- Tienes capacidad de análisis y razonamiento propio: comprendes la intención real detrás de cada mensaje, conectas ideas con coherencia y respondes con seguridad.
+- Orientas con autoridad y amabilidad en temas de bienestar, salud preventiva, liderazgo, emprendimiento, ventas y desarrollo personal, así como cualquier consulta general o cotidiana.
+
+REGLAS DE RESPUESTA PARA WHATSAPP:
+- Responde directamente al último mensaje del usuario manteniendo el hilo de la conversación.
+- Si recibes información verificada de internet en el mensaje del usuario, analízala y intégrala de forma natural en tu respuesta sin decir "según los resultados de búsqueda".
+- Sé clara, persuasiva y concisa (entre 1 y 3 párrafos cortos, fáciles de leer en celular), sin sonar robótica ni repetir frases hechas."""
+
+DISPARADORES_WEB = (
+    "clima", "tiempo", "temperatura", "lluvia", "pronóstico", "pronostico",
+    "hoy", "ayer", "mañana", "actual", "precio", "valor", "dólar", "dolar",
+    "noticia", "noticias", "cuánto", "cuanto", "qué pasó", "que paso",
+    "resultado", "partido", "hora", "fecha", "quién", "quien", "dónde", "donde",
+    "cuándo", "cuando", "cómo funciona", "como funciona", "qué es", "que es",
+    "busca", "investiga", "averigua", "confirma"
+)
+
+def requiere_consulta_web(texto: str) -> bool:
+    t = texto.lower().strip()
+    if len(t) < 4:
+        return False
+    return "?" in t or any(palabra in t for palabra in DISPARADORES_WEB)
 
 def buscar_en_internet(consulta: str) -> str:
-    """Busca información actualizada en la web de forma aislada y segura."""
+    """Consulta DuckDuckGo enfocada en español/Colombia con tolerancia a fallos."""
     try:
         with DDGS() as ddgs:
-            resultados = list(ddgs.text(consulta, max_results=3))
+            resultados = list(ddgs.text(consulta, region="co-es", max_results=4))
             if not resultados:
-                return "No se encontraron resultados recientes en la web."
-            resumen = [f"- {r.get('title', '')}: {r.get('body', '')}" for r in resultados]
-            return "\n".join(resumen)
-    except Exception as e:
-        return f"Búsqueda web no disponible temporalmente ({str(e)}). Responde con tu conocimiento general."
+                resultados = list(ddgs.text(consulta, max_results=3))
+            if not resultados:
+                return ""
+            lineas = []
+            for r in resultados:
+                titulo = r.get("title", "").strip()
+                cuerpo = r.get("body", "").strip()
+                if titulo or cuerpo:
+                    lineas.append(f"- {titulo}: {cuerpo}")
+            return "\n".join(lineas)
+    except Exception:
+        return ""
 
-HERRAMIENTAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "buscar_en_internet",
-            "description": "Busca información actual en internet sobre noticias, precios, eventos o datos que requieran verificación en tiempo real.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "consulta": {
-                        "type": "string",
-                        "description": "Términos de búsqueda claros y concisos"
-                    }
-                },
-                "required": ["consulta"]
-            }
-        }
-    }
-]
-
-def obtener_modelos_activos():
-    """Consulta directamente a Groq los modelos de chat activos en la cuenta."""
+def obtener_modelos_activos() -> list:
+    """Obtiene en tiempo real los modelos de texto vigentes en la cuenta de Groq."""
     modelos_disponibles = client.models.list().data
-    excluidos = ("whisper", "guard", "tts", "playai", "distil-whisper")
+    excluidos = ("whisper", "guard", "tts", "playai", "distil-whisper", "safeguard")
     candidatos = [
         m.id for m in modelos_disponibles
         if not any(x in m.id.lower() for x in excluidos)
     ]
     candidatos.sort(key=lambda x: (
-        0 if "70b" in x.lower() or "120b" in x.lower() else
-        1 if "32b" in x.lower() or "17b" in x.lower() or "llama" in x.lower() else 2
+        0 if ("70b" in x.lower() or "120b" in x.lower()) else
+        1 if ("32b" in x.lower() or "17b" in x.lower() or "llama" in x.lower()) else 2
     ))
     return candidatos
 
-def llamar_groq_dinamico(mensajes, usar_herramientas=True):
-    """Detecta los modelos activos en tiempo real y ejecuta la consulta."""
+def razonar_con_groq(mensajes: list) -> str:
+    """Ejecuta el razonamiento sobre el mejor modelo activo disponible."""
     modelos = obtener_modelos_activos()
     if not modelos:
-        raise RuntimeError("No se encontraron modelos de chat activos en tu cuenta de Groq.")
-    
+        raise RuntimeError("No hay modelos de chat activos disponibles en tu cuenta de Groq.")
+
     ultimo_error = None
     for modelo in modelos:
         try:
-            kwargs = {
-                "model": modelo,
-                "messages": mensajes,
-                "temperature": 0.7,
-                "max_tokens": 500
-            }
-            if usar_herramientas:
-                kwargs["tools"] = HERRAMIENTAS
-                kwargs["tool_choice"] = "auto"
-            return client.chat.completions.create(**kwargs), modelo
+            respuesta = client.chat.completions.create(
+                model=modelo,
+                messages=mensajes,
+                temperature=0.65,
+                max_tokens=700,
+                top_p=0.9
+            )
+            texto = (respuesta.choices[0].message.content or "").strip()
+            texto = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL).strip()
+            if texto:
+                return texto
         except Exception as e:
             ultimo_error = e
-            if usar_herramientas:
-                try:
-                    return client.chat.completions.create(
-                        model=modelo,
-                        messages=mensajes,
-                        temperature=0.7,
-                        max_tokens=500
-                    ), modelo
-                except Exception as e2:
-                    ultimo_error = e2
             continue
-    raise ultimo_error
+
+    raise ultimo_error or RuntimeError("Ningún modelo pudo generar respuesta.")
 
 @app.route("/", methods=["GET"])
 def health_check():
@@ -110,14 +115,14 @@ def health_check():
 def webhook():
     try:
         data = request.get_json(silent=True) or request.form.to_dict() or {}
-        
+
         query = data.get("query") or data.get("message") or {}
         if isinstance(query, dict):
-            mensaje_usuario = query.get("message", "").strip()
-            remitente = query.get("sender", "usuario_default")
+            mensaje_usuario = str(query.get("message", "")).strip()
+            remitente = str(query.get("sender", "usuario_default")).strip()
         else:
             mensaje_usuario = str(query).strip()
-            remitente = data.get("sender", "usuario_default")
+            remitente = str(data.get("sender", "usuario_default")).strip()
 
         if not mensaje_usuario:
             return jsonify({"replies": []}), 200
@@ -127,63 +132,35 @@ def webhook():
                 "replies": [{"message": "⚠️ Falta configurar GROQ_API_KEY en Render."}]
             }), 200
 
-        if remitente not in historial_usuarios:
+        if mensaje_usuario.lower() in ("reiniciar", "reset", "borrar memoria"):
             historial_usuarios[remitente] = []
-        
-        historial_usuarios[remitente].append({"role": "user", "content": mensaje_usuario})
-        historial_usuarios[remitente] = historial_usuarios[remitente][-10:]
+            return jsonify({
+                "replies": [{"message": "Listo, memoria reiniciada. ¿En qué te puedo ayudar?"}]
+            }), 200
 
-        mensajes = [{"role": "system", "content": SYSTEM_PROMPT}] + historial_usuarios[remitente]
+        historial_previo = historial_usuarios.get(remitente, [])[-8:]
 
-        respuesta, modelo_activo = llamar_groq_dinamico(mensajes, usar_herramientas=True)
-        mensaje_ia = respuesta.choices[0].message
+        bloque_web = ""
+        if requiere_consulta_web(mensaje_usuario):
+            datos_web = buscar_en_internet(mensaje_usuario)
+            if datos_web:
+                bloque_web = f"\n\n[Contexto actualizado de internet]:\n{datos_web}"
 
-        if getattr(mensaje_ia, "tool_calls", None):
-            mensajes.append({
-                "role": "assistant",
-                "content": mensaje_ia.content or "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
-                        }
-                    } for tc in mensaje_ia.tool_calls
-                ]
-            })
+        mensajes = (
+            [{"role": "system", "content": construir_system_prompt()}]
+            + historial_previo
+            + [{"role": "user", "content": mensaje_usuario + bloque_web}]
+        )
 
-            for tool_call in mensaje_ia.tool_calls:
-                if tool_call.function.name == "buscar_en_internet":
-                    args = json.loads(tool_call.function.arguments)
-                    resultado_web = buscar_en_internet(args.get("consulta", ""))
-                    mensajes.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": "buscar_en_internet",
-                        "content": resultado_web
-                    })
+        texto_final = razonar_con_groq(mensajes)
 
-            segunda_respuesta = client.chat.completions.create(
-                model=modelo_activo,
-                messages=mensajes,
-                temperature=0.7,
-                max_tokens=500
-            )
-            texto_final = segunda_respuesta.choices[0].message.content.strip()
-        else:
-            texto_final = (mensaje_ia.content or "").strip()
-
-        if not texto_final:
-            texto_final = "¡Hola! Cuéntame un poco más para poder ayudarte mejor."
-
-        historial_usuarios[remitente].append({"role": "assistant", "content": texto_final})
+        historial_usuarios[remitente] = historial_previo + [
+            {"role": "user", "content": mensaje_usuario},
+            {"role": "assistant", "content": texto_final}
+        ]
 
         return jsonify({
-            "replies": [
-                {"message": texto_final}
-            ]
+            "replies": [{"message": texto_final}]
         }), 200
 
     except Exception as e:
