@@ -1,39 +1,50 @@
 import os
 import json
-from datetime import datetime
 from flask import Flask, request, jsonify
 from groq import Groq
 from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
-api_key = os.environ.get("GROQ_API_KEY")
+# Inicialización segura del cliente Groq limpiando posibles espacios en la variable
+api_key = os.environ.get("GROQ_API_KEY", "").strip()
 client = Groq(api_key=api_key) if api_key else None
-historial_chats = {}
 
-SYSTEM_PROMPT = """
-Eres el clon digital autónomo de Viviana Marín, empresaria, estratega comercial y líder de expansión digital en Medellín, Colombia.
+# Memoria en RAM por remitente (guarda los últimos 10 mensajes por persona)
+historial_usuarios = {}
 
-TU NIVEL DE INTELIGENCIA Y AUTONOMÍA:
-1. DOMINIO TOTAL DE TEMAS: Respondes con criterio profundo, brillante y natural sobre cualquier tema que te pregunten: noticias actuales, clima, recetas, ciencia, tecnología, cultura, matemáticas, consejos de vida o negocios. NUNCA evadas una pregunta general ni pidas ayuda humana para temas que puedes resolver tú misma.
-2. CONECTIVIDAD EN TIEMPO REAL: Tienes acceso a búsqueda en internet. Si el usuario pregunta por datos actuales (clima, precios, noticias, eventos, resultados deportivos, información de hoy), usa tu herramienta de búsqueda para dar datos exactos y actualizados.
-3. TONO Y PERSONALIDAD: Hablas como una mujer paisa culta, cercana, carismática, directa y resolutiva. Adapta tu lenguaje: cálida con conocidos, ejecutiva y persuasiva con clientes. Evita sonar robótica o repetitiva; sé concisa pero sustanciosa (máximo 3 o 4 líneas por mensaje para WhatsApp).
-4. CONOCIMIENTO DE MARCA (MULTYDRINK BE HEALTHY): Si la conversación gira en torno a bienestar, salud, cansancio, dolores, energía o emprendimiento, asesora de forma experta sobre los beneficios de MultyDrink Be Healthy y sus oportunidades de distribución.
-5. REGLA DE ESCALAMIENTO ESTRICTA: ÚNICAMENTE cuando el cliente pida cerrar una compra directa, agendar una cita presencial, enviar un comprobante de pago o tratar un asunto privado urgente que requiera la intervención física de Viviana, responde lo necesario y cierra con: "Un momento, este punto te lo resuelve directamente Viviana Marín; ya mismo me comunico con ella para que te atienda personalmente." Para TODO lo demás, resuélvelo tú misma al 100%.
-"""
+SYSTEM_PROMPT = """Eres el asistente virtual inteligente y clon digital de Viviana Marín Jiménez.
+Eres cálida, profesional, empática, perspicaz y resuelves dudas con criterio propio y naturalidad.
+Respondes mensajes de WhatsApp de forma clara, cercana y persuasiva, adaptándote al contexto de la conversación sin sonar robótica ni repetitiva.
+Si te preguntan por temas de bienestar, liderazgo, emprendimiento o productos, orientas con seguridad y calidez.
+Mantén las respuestas concisas y naturales para chat (máximo 2 o 3 párrafos cortos), usando un tono conversacional colombiano profesional."""
 
-tools = [
+def buscar_en_internet(consulta: str) -> str:
+    """Busca información actualizada en la web de forma aislada y segura."""
+    try:
+        with DDGS() as ddgs:
+            resultados = list(ddgs.text(consulta, max_results=3))
+            if not resultados:
+                return "No se encontraron resultados recientes en la web."
+            resumen = []
+            for r in resultados:
+                resumen.append(f"- {r.get('title', '')}: {r.get('body', '')}")
+            return "\n".join(resumen)
+    except Exception as e:
+        return f"Búsqueda web no disponible temporalmente ({str(e)}). Responde con tu conocimiento general."
+
+HERRAMIENTAS = [
     {
         "type": "function",
         "function": {
             "name": "buscar_en_internet",
-            "description": "Busca información en tiempo real en internet sobre noticias, clima, precios, datos actuales, lugares o cualquier consulta que requiera información actualizada.",
+            "description": "Busca información actual en internet sobre noticias, precios, eventos o datos que requieran verificación en tiempo real.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "consulta": {
                         "type": "string",
-                        "description": "Términos de búsqueda claros y precisos."
+                        "description": "Términos de búsqueda claros y concisos"
                     }
                 },
                 "required": ["consulta"]
@@ -42,85 +53,125 @@ tools = [
     }
 ]
 
-def ejecutar_busqueda(consulta):
-    try:
-        with DDGS() as ddgs:
-            resultados = list(ddgs.text(consulta, region="co-es", max_results=4))
-            if not resultados:
-                return "No se encontraron resultados recientes."
-            texto = "\n".join([f"- {r['title']}: {r['body']}" for r in resultados])
-            return texto
-    except Exception as e:
-        return f"Error al consultar internet: {str(e)}"
-
 @app.route("/", methods=["GET"])
-def home():
-    return "Clon Inteligente Viviana Marín - Activo y Conectado", 200
+def health_check():
+    return jsonify({
+        "status": "online",
+        "servicio": "Clon-viviana",
+        "groq_configurado": bool(api_key)
+    }), 200
 
 @app.route("/webhook", methods=["POST"])
+@app.route("/", methods=["POST"])
 def webhook():
-    if not client:
-        return jsonify({"replies": [{"message": "Error: Falta configurar GROQ_API_KEY en Render."}]})
-
-    data = request.json or {}
-    query = data.get("query", {})
-    remitente = query.get("sender", "usuario_general")
-    mensaje = query.get("message", "").strip()
-
-    if not mensaje:
-        return jsonify({"replies": []})
-
-    fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M")
-    prompt_con_fecha = f"{SYSTEM_PROMPT}\nFecha y hora actual en Colombia: {fecha_actual}."
-
-    historial = historial_chats.get(remitente, [])
-    mensajes = [{"role": "system", "content": prompt_con_fecha}] + historial[-8:] + [{"role": "user", "content": mensaje}]
-
     try:
-        respuesta_modelo = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=mensajes,
-            tools=tools,
-            tool_choice="auto",
-            temperature=0.6,
-            max_tokens=600
-        )
+        data = request.get_json(silent=True) or request.form.to_dict() or {}
+        
+        # Extracción compatible con AutoResponder (query / sender)
+        query = data.get("query") or data.get("message") or {}
+        if isinstance(query, dict):
+            mensaje_usuario = query.get("message", "").strip()
+            remitente = query.get("sender", "usuario_default")
+        else:
+            mensaje_usuario = str(query).strip()
+            remitente = data.get("sender", "usuario_default")
 
-        msg_objeto = respuesta_modelo.choices[0].message
+        if not mensaje_usuario:
+            return jsonify({"replies": []}), 200
 
-        if msg_objeto.tool_calls:
-            mensajes.append(msg_objeto)
-            for tool_call in msg_objeto.tool_calls:
+        if not client:
+            return jsonify({
+                "replies": [{"message": "⚠️ Falta configurar GROQ_API_KEY en las variables de entorno de Render."}]
+            }), 200
+
+        # Recuperar o iniciar historial del contacto
+        if remitente not in historial_usuarios:
+            historial_usuarios[remitente] = []
+        
+        historial_usuarios[remitente].append({"role": "user", "content": mensaje_usuario})
+        # Mantener solo los últimos 10 mensajes para no saturar tokens
+        historial_usuarios[remitente] = historial_usuarios[remitente][-10:]
+
+        mensajes = [{"role": "system", "content": SYSTEM_PROMPT}] + historial_usuarios[remitente]
+
+        # Primera llamada de razonamiento con soporte de herramientas
+        try:
+            respuesta = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=mensajes,
+                tools=HERRAMIENTAS,
+                tool_choice="auto",
+                temperature=0.7,
+                max_tokens=500
+            )
+        except Exception:
+            # Respaldo automático sin herramientas si el modelo falla al formatear tool_calls
+            respuesta = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=mensajes,
+                temperature=0.7,
+                max_tokens=500
+            )
+
+        mensaje_ia = respuesta.choices[0].message
+
+        # Si el modelo decide investigar en internet antes de responder
+        if getattr(mensaje_ia, "tool_calls", None):
+            mensajes.append({
+                "role": "assistant",
+                "content": mensaje_ia.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    } for tc in mensaje_ia.tool_calls
+                ]
+            })
+
+            for tool_call in mensaje_ia.tool_calls:
                 if tool_call.function.name == "buscar_en_internet":
                     args = json.loads(tool_call.function.arguments)
-                    info_web = ejecutar_busqueda(args.get("consulta", mensaje))
+                    resultado_web = buscar_en_internet(args.get("consulta", ""))
                     mensajes.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": "buscar_en_internet",
-                        "content": info_web
+                        "content": resultado_web
                     })
 
             segunda_respuesta = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=mensajes,
-                temperature=0.6,
-                max_tokens=600
+                temperature=0.7,
+                max_tokens=500
             )
             texto_final = segunda_respuesta.choices[0].message.content.strip()
         else:
-            texto_final = msg_objeto.content.strip()
+            texto_final = (mensaje_ia.content or "").strip()
+
+        if not texto_final:
+            texto_final = "¡Hola! Cuéntame un poco más para poder ayudarte mejor."
+
+        historial_usuarios[remitente].append({"role": "assistant", "content": texto_final})
+
+        return jsonify({
+            "replies": [
+                {"message": texto_final}
+            ]
+        }), 200
 
     except Exception as e:
-        texto_final = "Dame un segundo que estoy procesando la información, ¿me repites por favor?"
-
-    historial_chats[remitente] = (
-        historial + 
-        [{"role": "user", "content": mensaje}, {"role": "assistant", "content": texto_final}]
-    )[-10:]
-
-    return jsonify({"replies": [{"message": texto_final}]})
+        # Muestra el diagnóstico real en lugar de repetir una frase fija
+        return jsonify({
+            "replies": [
+                {"message": f"[Diagnóstico Clon]: {type(e).__name__} - {str(e)}"}
+            ]
+        }), 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
