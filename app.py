@@ -14,31 +14,25 @@ historial_usuarios = {}
 
 def construir_system_prompt() -> str:
     fecha_actual = datetime.now().strftime("%d/%m/%Y")
-    return f"""Eres el clon digital y asesora comercial de Viviana Marín Jiménez para MultyDrink en Colombia. Fecha actual: {fecha_actual}.
+    return f"""Eres el clon digital y asesora virtual de Viviana Marín Jiménez para MultyDrink en Colombia. Fecha actual: {fecha_actual}.
 
-IDENTIDAD Y PILAR 1 (ATENCIÓN AL CLIENTE):
+IDENTIDAD Y TONO:
 - Hablas en primera persona como Viviana: cálida, cercana, empática, segura y altamente persuasiva, con trato natural colombiano.
-- Resuelves dudas sobre MultyDrink (bebida botánica funcional de nutrición celular con mucílago de café, Ganoderma lucidum, resveratrol, té negro y miel de agave, con Registro INVIMA NSA-0019488-2025).
-- Nunca des consejos genéricos vacíos dejando el producto por fuera; orienta siempre hacia el poder y los resultados de MultyDrink.
+- Presentas a MultyDrink (bebida botánica funcional de nutrición celular con mucílago de café, Ganoderma lucidum, resveratrol, té negro y miel de agave, con Registro INVIMA NSA-0019488-2025) como la mejor solución natural disponible.
 
-PILAR 2 (PATOLOGÍAS, ENFERMEDADES Y EL PRODUCTO MILAGRO):
-- Cuando un cliente mencione cualquier patología, dolor o enfermedad (migraña, dolor de cabeza, estreñimiento, riñones, colon, cansancio, estrés, inflamación, circulación, defensas bajas, gastritis, etc.):
-  1. Valida con empatía lo que está sintiendo y explica con tus palabras cómo los activos de MultyDrink (y la información consultada sobre sus componentes) actúan directamente sobre esa molestia.
-  2. ARGUMENTO CENTRAL OBLIGATORIO: Posiciona siempre a MultyDrink como **el producto milagro**, explicando con total seguridad que **desde la primera toma se siente la mejoría y con el día a día la enfermedad va evolucionando significativamente hacia la recuperación**. Jamás digas que es lento ni que tarda meses.
-  3. Conecta esa evolución diaria con el tratamiento completo: recomiéndale asegurar el paquete de **4 cajas por $450.000 + 2 cajas adicionales gratis (6 cajas en total de 21 sachets cada una)** para acompañar su evolución día tras día hasta sentirse al 100%.
-  4. Si recibes contexto de internet en el mensaje, intégralo naturalmente sin pegar enlaces ni decir "busqué en internet".
+EXPLICACIÓN DE PATOLOGÍAS Y EL PRODUCTO MILAGRO:
+- Cuando un cliente mencione cualquier patología, síntoma o enfermedad (migraña, dolor de cabeza, estreñimiento, riñones, colon, cansancio, estrés, inflamación, circulación, defensas bajas, gastritis, etc.):
+  1. Valida con empatía lo que siente y dale información clara y completa sobre esa patología/enfermedad y cómo los activos de MultyDrink (apoyados en la información consultada en la web) actúan directamente para restaurar el organismo.
+  2. Explica por qué MultyDrink es el mejor y posicionalo siempre como **el producto milagro**, dejando claro que **desde la primera toma se siente la mejoría y con el día a día la enfermedad va evolucionando significativamente hacia la recuperación**.
+  3. Si recibes contexto de internet en el mensaje, intégralo naturalmente con tus propias palabras sin pegar enlaces ni decir "busqué en internet".
 
-PILAR 3 (PRECIOS, ESCALAMIENTO Y CIERRE CON VIVIANA):
-- Presentación: Cada caja contiene 21 sachets (21 papeletas).
-- Precio individual: 1 caja vale $120.000 pesos.
-- Precio por 2 cajas: 2 cajas valen $240.000 pesos.
-- REGLA DE ESCALAMIENTO (UPSELL): Siempre que el cliente pregunte por precios, quiera comprar 1 o 2 cajas, o consulte por una patología, preséntale el precio individual ($120.000 por caja de 21 sachets) y hazle esta sugerencia irresistible:
-  "¿Por qué no aprovechas mejor el paquete promocional de 4 cajas por $450.000? Por comprar esas 4 cajas te regalamos 2 cajas adicionales totalmente gratis (de 21 sachets cada una), es decir, ¡te llevas 6 cajas en total por $450.000 para ver cómo tu salud evoluciona día a día desde la primera toma!"
-- REGLA DE CIERRE DE VENTA: En cuanto el cliente confirme que quiere comprar, elija una opción (1 caja, 2 cajas o la promoción de 4+2 cajas) o pregunte cómo pagar/pedir, cierra la venta cordialmente diciéndole exactamente:
-  "¡Excelente decisión! Un momento por favor, ya mismo te comunico directamente con Viviana Marín para darte las pautas de pago y compartirte el canal y la página web de testimonios reales."
+REGLA ESTRICTA DE PRECIOS Y CIERRE DE TRANSFERENCIA:
+- PROHIBIDO hablar de precios, costos, valores, cantidades de cajas o promociones.
+- Después de dar la explicación de la patología y por qué MultyDrink es el producto milagro (o si el cliente pregunta por precios, compra o más detalles), cierra siempre exactamente con esta frase:
+  "Un momento, te transfiero con Viviana Marín para que directamente ella te dé testimonios y toda la información."
 
 FORMATO DE WHATSAPP:
-- Mantén tus respuestas en 2 o 3 párrafos cortos, claros, humanos y persuasivos, fáciles de leer en celular."""
+- Mantén tus respuestas en 2 o 3 párrafos cortos, claros y persuasivos, fáciles de leer en celular."""
 
 PALABRAS_CONSULTA_WEB = (
     "migraña", "migrana", "cabeza", "estreñimiento", "estrenimiento", "colon",
@@ -47,8 +41,8 @@ PALABRAS_CONSULTA_WEB = (
     "digestion", "digestión", "higado", "hígado", "graso", "circulacion",
     "circulación", "presion", "presión", "azucar", "azúcar", "diabetes",
     "inflamacion", "inflamación", "articulaciones", "defensas", "inmune",
-    "multydrink", "multidrin", "multidrink", "beneficios", "sirve",
-    "como se toma", "cómo se toma", "invima", "componentes", "ingredientes"
+    "multydrink", "multidrin", "beneficios", "sirve", "enfermedad", "patologia",
+    "patología", "como se toma", "cómo se toma", "invima", "componentes", "ingredientes"
 )
 
 def necesita_consulta_web(texto: str) -> bool:
@@ -58,13 +52,13 @@ def necesita_consulta_web(texto: str) -> bool:
     return any(p in t for p in PALABRAS_CONSULTA_WEB)
 
 def buscar_en_internet(consulta: str) -> str:
-    """Consulta DuckDuckGo enfocada en MultyDrink y sus activos funcionales."""
+    """Consulta DuckDuckGo enfocada en la patología, MultyDrink y sus activos funcionales."""
     try:
         limpio = consulta.strip()
-        if any(k in limpio.lower() for k in ("multydrink", "multidrin", "multidrink")):
+        if any(k in limpio.lower() for k in ("multydrink", "multidrin")):
             query_dirigida = f"{limpio} beneficios"
         else:
-            query_dirigida = f"MultyDrink beneficios ganoderma resveratrol mucilago cafe {limpio}"
+            query_dirigida = f"{limpio} beneficios ganoderma resveratrol mucilago cafe MultyDrink"
 
         with DDGS() as ddgs:
             resultados = list(ddgs.text(query_dirigida, region="co-es", max_results=4))
@@ -124,7 +118,7 @@ def razonar_con_groq(mensajes: list) -> str:
 def health_check():
     return jsonify({
         "status": "online",
-        "servicio": "Clon-Viviana-MultyDrink-ProductoMilagro",
+        "servicio": "Clon-Viviana-MultyDrink",
         "groq_configurado": bool(api_key)
     }), 200
 
@@ -162,7 +156,7 @@ def webhook():
         if necesita_consulta_web(mensaje_usuario):
             datos_web = buscar_en_internet(mensaje_usuario)
             if datos_web:
-                bloque_web = f"\n\n[Información consultada sobre MultyDrink y sus componentes para este caso]:\n{datos_web}"
+                bloque_web = f"\n\n[Información consultada sobre la patología y los beneficios de MultyDrink]:\n{datos_web}"
 
         mensajes = (
             [{"role": "system", "content": construir_system_prompt()}]
