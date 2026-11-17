@@ -52,13 +52,11 @@ HERRAMIENTAS = [
 def obtener_modelos_activos():
     """Consulta directamente a Groq los modelos de chat activos en la cuenta."""
     modelos_disponibles = client.models.list().data
-    # Filtrar modelos de audio/whisper o moderación que no sirven para chat
     excluidos = ("whisper", "guard", "tts", "playai", "distil-whisper")
     candidatos = [
         m.id for m in modelos_disponibles
         if not any(x in m.id.lower() for x in excluidos)
     ]
-    # Priorizar modelos grandes/versátiles de chat si están en la lista
     candidatos.sort(key=lambda x: (
         0 if "70b" in x.lower() or "120b" in x.lower() else
         1 if "32b" in x.lower() or "17b" in x.lower() or "llama" in x.lower() else 2
@@ -86,14 +84,13 @@ def llamar_groq_dinamico(mensajes, usar_herramientas=True):
             return client.chat.completions.create(**kwargs), modelo
         except Exception as e:
             ultimo_error = e
-            # Reintentar ese mismo modelo sin herramientas si no soporta function calling
             if usar_herramientas:
                 try:
                     return client.chat.completions.create(
                         model=modelo,
                         messages=mensajes,
-                        temperature": 0.7,
-                        max_tokens": 500
+                        temperature=0.7,
+                        max_tokens=500
                     ), modelo
                 except Exception as e2:
                     ultimo_error = e2
