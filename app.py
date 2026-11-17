@@ -6,20 +6,10 @@ from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
-# Inicialización segura del cliente Groq limpiando posibles espacios
 api_key = os.environ.get("GROQ_API_KEY", "").strip()
 client = Groq(api_key=api_key) if api_key else None
 
-# Memoria en RAM por remitente (últimos 10 mensajes)
 historial_usuarios = {}
-
-# Lista de modelos vigentes en Groq en orden de prioridad
-MODELOS_GROQ = [
-    "llama-3.1-8b-instant",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "qwen-qwq-32b",
-    "gemma2-9b-it"
-]
 
 SYSTEM_PROMPT = """Eres el asistente virtual inteligente y clon digital de Viviana Marín Jiménez.
 Eres cálida, profesional, empática, perspicaz y resuelves dudas con criterio propio y naturalidad.
@@ -59,10 +49,30 @@ HERRAMIENTAS = [
     }
 ]
 
-def llamar_groq_con_respaldo(mensajes, usar_herramientas=True):
-    """Prueba los modelos en orden hasta encontrar uno activo en la cuenta de Groq."""
+def obtener_modelos_activos():
+    """Consulta directamente a Groq los modelos de chat activos en la cuenta."""
+    modelos_disponibles = client.models.list().data
+    # Filtrar modelos de audio/whisper o moderación que no sirven para chat
+    excluidos = ("whisper", "guard", "tts", "playai", "distil-whisper")
+    candidatos = [
+        m.id for m in modelos_disponibles
+        if not any(x in m.id.lower() for x in excluidos)
+    ]
+    # Priorizar modelos grandes/versátiles de chat si están en la lista
+    candidatos.sort(key=lambda x: (
+        0 if "70b" in x.lower() or "120b" in x.lower() else
+        1 if "32b" in x.lower() or "17b" in x.lower() or "llama" in x.lower() else 2
+    ))
+    return candidatos
+
+def llamar_groq_dinamico(mensajes, usar_herramientas=True):
+    """Detecta los modelos activos en tiempo real y ejecuta la consulta."""
+    modelos = obtener_modelos_activos()
+    if not modelos:
+        raise RuntimeError("No se encontraron modelos de chat activos en tu cuenta de Groq.")
+    
     ultimo_error = None
-    for modelo in MODELOS_GROQ:
+    for modelo in modelos:
         try:
             kwargs = {
                 "model": modelo,
@@ -76,14 +86,14 @@ def llamar_groq_con_respaldo(mensajes, usar_herramientas=True):
             return client.chat.completions.create(**kwargs), modelo
         except Exception as e:
             ultimo_error = e
-            # Si falla por herramientas, reintenta ese mismo modelo sin herramientas
-            if usar_herramientas and "tool" in str(e).lower():
+            # Reintentar ese mismo modelo sin herramientas si no soporta function calling
+            if usar_herramientas:
                 try:
                     return client.chat.completions.create(
                         model=modelo,
                         messages=mensajes,
-                        temperature=0.7,
-                        max_tokens=500
+                        temperature": 0.7,
+                        max_tokens": 500
                     ), modelo
                 except Exception as e2:
                     ultimo_error = e2
@@ -128,11 +138,9 @@ def webhook():
 
         mensajes = [{"role": "system", "content": SYSTEM_PROMPT}] + historial_usuarios[remitente]
 
-        # Primera llamada con rotación automática de modelos vigentes
-        respuesta, modelo_activo = llamar_groq_con_respaldo(mensajes, usar_herramientas=True)
+        respuesta, modelo_activo = llamar_groq_dinamico(mensajes, usar_herramientas=True)
         mensaje_ia = respuesta.choices[0].message
 
-        # Si el modelo decide investigar en internet antes de responder
         if getattr(mensaje_ia, "tool_calls", None):
             mensajes.append({
                 "role": "assistant",
