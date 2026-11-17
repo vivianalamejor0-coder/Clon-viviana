@@ -7,49 +7,69 @@ from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
-# 1. Validación estricta de credenciales
 api_key = os.environ.get("GROQ_API_KEY", "").strip()
 client = Groq(api_key=api_key) if api_key else None
 
-# 2. Memoria conversacional aislada por remitente
 historial_usuarios = {}
 
 def construir_system_prompt() -> str:
     fecha_actual = datetime.now().strftime("%d/%m/%Y")
-    return f"""Eres el clon digital e inteligencia virtual de Viviana Marín Jiménez. Fecha actual: {fecha_actual}.
+    return f"""Eres el clon digital y asesora comercial de Viviana Marín Jiménez para MultyDrink en Colombia. Fecha actual: {fecha_actual}.
 
-PERSONALIDAD Y CRITERIO:
-- Eres cálida, cercana, empática, perspicaz y profesional, con un trato natural estilo colombiano.
-- Tienes capacidad de análisis y razonamiento propio: comprendes la intención real detrás de cada mensaje, conectas ideas con coherencia y respondes con seguridad.
-- Orientas con autoridad y amabilidad en temas de bienestar, salud preventiva, liderazgo, emprendimiento, ventas y desarrollo personal, así como cualquier consulta general o cotidiana.
+IDENTIDAD Y PILAR 1 (ATENCIÓN AL CLIENTE):
+- Hablas en primera persona como Viviana: cálida, cercana, empática, honesta y persuasiva, con trato natural colombiano.
+- Resuelves dudas sobre MultyDrink (bebida botánica funcional de nutrición celular con mucílago de café, Ganoderma lucidum, resveratrol, té negro y miel de agave, con Registro INVIMA NSA-0019488-2025).
+- Nunca des consejos genéricos vacíos dejando el producto por fuera; orienta siempre hacia los beneficios reales de MultyDrink.
 
-REGLAS DE RESPUESTA PARA WHATSAPP:
-- Responde directamente al último mensaje del usuario manteniendo el hilo de la conversación.
-- Si recibes información verificada de internet en el mensaje del usuario, analízala y intégrala de forma natural en tu respuesta sin decir "según los resultados de búsqueda".
-- Sé clara, persuasiva y concisa (entre 1 y 3 párrafos cortos, fáciles de leer en celular), sin sonar robótica ni repetir frases hechas."""
+PILAR 2 (PATOLOGÍAS, ENFERMEDADES Y TRATAMIENTO PROGRESIVO):
+- Cuando un cliente mencione cualquier patología, dolor o enfermedad (migraña, dolor de cabeza, estreñimiento, riñones, colon, cansancio, estrés, inflamación, circulación, defensas bajas, gastritis, etc.):
+  1. Valida con empatía lo que está sintiendo y explica con tus palabras cómo los activos de MultyDrink (y la información consultada sobre sus componentes) apoyan la restauración celular frente a esa molestia.
+  2. ACLARACIÓN OBLIGATORIA DE HONESTIDAD Y CONTINUIDAD: Déjale muy claro al cliente que MultyDrink **no es un producto milagro** que quita el problema de la noche a la mañana o en una sola caja; es un tratamiento progresivo de nutrición celular que va restaurando el cuerpo con el tiempo. Explícale que según cada organismo puede evolucionar rápido o de forma más lenta (a veces toma más de uno o dos meses), pero siendo constante puede llegar a mejorar hasta un 100%, por lo cual se necesitan varias cajas continuas.
+  3. Conecta esa necesidad de constancia directamente con la oferta del tratamiento completo: sugiérele llevar de una vez el paquete de **4 cajas por $450.000 + 2 cajas adicionales gratis (6 cajas en total de 21 sachets cada una)** para que pueda hacer su proceso completo sin interrupciones.
+  4. Si recibes contexto de internet en el mensaje, intégralo naturalmente sin pegar enlaces ni decir "busqué en internet".
 
-DISPARADORES_WEB = (
-    "clima", "tiempo", "temperatura", "lluvia", "pronóstico", "pronostico",
-    "hoy", "ayer", "mañana", "actual", "precio", "valor", "dólar", "dolar",
-    "noticia", "noticias", "cuánto", "cuanto", "qué pasó", "que paso",
-    "resultado", "partido", "hora", "fecha", "quién", "quien", "dónde", "donde",
-    "cuándo", "cuando", "cómo funciona", "como funciona", "qué es", "que es",
-    "busca", "investiga", "averigua", "confirma"
+PILAR 3 (PRECIOS, ESCALAMIENTO Y CIERRE CON VIVIANA):
+- Presentación: Cada caja contiene 21 sachets (21 papeletas).
+- Precio individual: 1 caja vale $120.000 pesos.
+- Precio por 2 cajas: 2 cajas valen $240.000 pesos.
+- REGLA DE ESCALAMIENTO (UPSELL): Siempre que el cliente pregunte por precios, quiera comprar 1 o 2 cajas, o necesite un tratamiento para una patología, preséntale el precio individual ($120.000 por caja de 21 sachets) y hazle esta sugerencia:
+  "¿Por qué no aprovechas mejor el tratamiento completo de 4 cajas por $450.000? Por comprar esas 4 cajas te regalamos 2 cajas adicionales totalmente gratis (de 21 sachets cada una), es decir, ¡te llevas 6 cajas en total por $450.000 para que hagas tu proceso completo!"
+- REGLA DE CIERRE DE VENTA: En cuanto el cliente confirme que quiere comprar, elija una opción (1 caja, 2 cajas o la promoción de 4+2 cajas) o pregunte cómo pagar/pedir, cierra la venta cordialmente diciéndole exactamente:
+  "¡Excelente decisión! Un momento por favor, ya mismo te comunico directamente con Viviana Marín para darte las pautas de pago y compartirte el canal y la página web de testimonios reales."
+
+FORMATO DE WHATSAPP:
+- Mantén tus respuestas en 2 o 3 párrafos cortos, claros, humanos y persuasivos, fáciles de leer en celular."""
+
+PALABRAS_CONSULTA_WEB = (
+    "migraña", "migrana", "cabeza", "estreñimiento", "estrenimiento", "colon",
+    "riñon", "riñón", "riñones", "dolor", "cansancio", "fatiga", "sueño",
+    "insomnio", "estrés", "estres", "ansiedad", "gastritis", "reflujo",
+    "digestion", "digestión", "higado", "hígado", "graso", "circulacion",
+    "circulación", "presion", "presión", "azucar", "azúcar", "diabetes",
+    "inflamacion", "inflamación", "articulaciones", "defensas", "inmune",
+    "multydrink", "multidrin", "multidrink", "beneficios", "sirve",
+    "como se toma", "cómo se toma", "invima", "componentes", "ingredientes"
 )
 
-def requiere_consulta_web(texto: str) -> bool:
+def necesita_consulta_web(texto: str) -> bool:
     t = texto.lower().strip()
     if len(t) < 4:
         return False
-    return "?" in t or any(palabra in t for palabra in DISPARADORES_WEB)
+    return any(p in t for p in PALABRAS_CONSULTA_WEB)
 
 def buscar_en_internet(consulta: str) -> str:
-    """Consulta DuckDuckGo enfocada en español/Colombia con tolerancia a fallos."""
+    """Consulta DuckDuckGo enfocada en MultyDrink y sus activos funcionales."""
     try:
+        limpio = consulta.strip()
+        if any(k in limpio.lower() for k in ("multydrink", "multidrin", "multidrink")):
+            query_dirigida = f"{limpio} beneficios"
+        else:
+            query_dirigida = f"MultyDrink beneficios ganoderma resveratrol mucilago cafe {limpio}"
+
         with DDGS() as ddgs:
-            resultados = list(ddgs.text(consulta, region="co-es", max_results=4))
+            resultados = list(ddgs.text(query_dirigida, region="co-es", max_results=4))
             if not resultados:
-                resultados = list(ddgs.text(consulta, max_results=3))
+                resultados = list(ddgs.text(f"beneficios ganoderma resveratrol {limpio}", region="co-es", max_results=3))
             if not resultados:
                 return ""
             lineas = []
@@ -63,7 +83,6 @@ def buscar_en_internet(consulta: str) -> str:
         return ""
 
 def obtener_modelos_activos() -> list:
-    """Obtiene en tiempo real los modelos de texto vigentes en la cuenta de Groq."""
     modelos_disponibles = client.models.list().data
     excluidos = ("whisper", "guard", "tts", "playai", "distil-whisper", "safeguard")
     candidatos = [
@@ -77,7 +96,6 @@ def obtener_modelos_activos() -> list:
     return candidatos
 
 def razonar_con_groq(mensajes: list) -> str:
-    """Ejecuta el razonamiento sobre el mejor modelo activo disponible."""
     modelos = obtener_modelos_activos()
     if not modelos:
         raise RuntimeError("No hay modelos de chat activos disponibles en tu cuenta de Groq.")
@@ -106,7 +124,7 @@ def razonar_con_groq(mensajes: list) -> str:
 def health_check():
     return jsonify({
         "status": "online",
-        "servicio": "Clon-viviana",
+        "servicio": "Clon-Viviana-MultyDrink-3Pilares",
         "groq_configurado": bool(api_key)
     }), 200
 
@@ -135,16 +153,16 @@ def webhook():
         if mensaje_usuario.lower() in ("reiniciar", "reset", "borrar memoria"):
             historial_usuarios[remitente] = []
             return jsonify({
-                "replies": [{"message": "Listo, memoria reiniciada. ¿En qué te puedo ayudar?"}]
+                "replies": [{"message": "Memoria reiniciada. ¿En qué te puedo ayudar hoy con MultyDrink?"}]
             }), 200
 
         historial_previo = historial_usuarios.get(remitente, [])[-8:]
 
         bloque_web = ""
-        if requiere_consulta_web(mensaje_usuario):
+        if necesita_consulta_web(mensaje_usuario):
             datos_web = buscar_en_internet(mensaje_usuario)
             if datos_web:
-                bloque_web = f"\n\n[Contexto actualizado de internet]:\n{datos_web}"
+                bloque_web = f"\n\n[Información consultada sobre MultyDrink y sus componentes para este caso]:\n{datos_web}"
 
         mensajes = (
             [{"role": "system", "content": construir_system_prompt()}]
