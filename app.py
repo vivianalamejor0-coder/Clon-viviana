@@ -6,12 +6,20 @@ from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
-# Inicialización segura del cliente Groq limpiando posibles espacios en la variable
+# Inicialización segura del cliente Groq limpiando posibles espacios
 api_key = os.environ.get("GROQ_API_KEY", "").strip()
 client = Groq(api_key=api_key) if api_key else None
 
-# Memoria en RAM por remitente (guarda los últimos 10 mensajes por persona)
+# Memoria en RAM por remitente (últimos 10 mensajes)
 historial_usuarios = {}
+
+# Lista de modelos vigentes en Groq en orden de prioridad
+MODELOS_GROQ = [
+    "llama-3.1-8b-instant",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "qwen-qwq-32b",
+    "gemma2-9b-it"
+]
 
 SYSTEM_PROMPT = """Eres el asistente virtual inteligente y clon digital de Viviana Marín Jiménez.
 Eres cálida, profesional, empática, perspicaz y resuelves dudas con criterio propio y naturalidad.
@@ -26,9 +34,7 @@ def buscar_en_internet(consulta: str) -> str:
             resultados = list(ddgs.text(consulta, max_results=3))
             if not resultados:
                 return "No se encontraron resultados recientes en la web."
-            resumen = []
-            for r in resultados:
-                resumen.append(f"- {r.get('title', '')}: {r.get('body', '')}")
+            resumen = [f"- {r.get('title', '')}: {r.get('body', '')}" for r in resultados]
             return "\n".join(resumen)
     except Exception as e:
         return f"Búsqueda web no disponible temporalmente ({str(e)}). Responde con tu conocimiento general."
@@ -53,6 +59,37 @@ HERRAMIENTAS = [
     }
 ]
 
+def llamar_groq_con_respaldo(mensajes, usar_herramientas=True):
+    """Prueba los modelos en orden hasta encontrar uno activo en la cuenta de Groq."""
+    ultimo_error = None
+    for modelo in MODELOS_GROQ:
+        try:
+            kwargs = {
+                "model": modelo,
+                "messages": mensajes,
+                "temperature": 0.7,
+                "max_tokens": 500
+            }
+            if usar_herramientas:
+                kwargs["tools"] = HERRAMIENTAS
+                kwargs["tool_choice"] = "auto"
+            return client.chat.completions.create(**kwargs), modelo
+        except Exception as e:
+            ultimo_error = e
+            # Si falla por herramientas, reintenta ese mismo modelo sin herramientas
+            if usar_herramientas and "tool" in str(e).lower():
+                try:
+                    return client.chat.completions.create(
+                        model=modelo,
+                        messages=mensajes,
+                        temperature=0.7,
+                        max_tokens=500
+                    ), modelo
+                except Exception as e2:
+                    ultimo_error = e2
+            continue
+    raise ultimo_error
+
 @app.route("/", methods=["GET"])
 def health_check():
     return jsonify({
@@ -67,7 +104,6 @@ def webhook():
     try:
         data = request.get_json(silent=True) or request.form.to_dict() or {}
         
-        # Extracción compatible con AutoResponder (query / sender)
         query = data.get("query") or data.get("message") or {}
         if isinstance(query, dict):
             mensaje_usuario = query.get("message", "").strip()
@@ -81,38 +117,19 @@ def webhook():
 
         if not client:
             return jsonify({
-                "replies": [{"message": "⚠️ Falta configurar GROQ_API_KEY en las variables de entorno de Render."}]
+                "replies": [{"message": "⚠️ Falta configurar GROQ_API_KEY en Render."}]
             }), 200
 
-        # Recuperar o iniciar historial del contacto
         if remitente not in historial_usuarios:
             historial_usuarios[remitente] = []
         
         historial_usuarios[remitente].append({"role": "user", "content": mensaje_usuario})
-        # Mantener solo los últimos 10 mensajes para no saturar tokens
         historial_usuarios[remitente] = historial_usuarios[remitente][-10:]
 
         mensajes = [{"role": "system", "content": SYSTEM_PROMPT}] + historial_usuarios[remitente]
 
-        # Primera llamada de razonamiento con soporte de herramientas
-        try:
-            respuesta = client.chat.completions.create(
-                model="llama-3.1-70b-versatile",
-                messages=mensajes,
-                tools=HERRAMIENTAS,
-                tool_choice="auto",
-                temperature=0.7,
-                max_tokens=500
-            )
-        except Exception:
-            # Respaldo automático sin herramientas si el modelo falla al formatear tool_calls
-            respuesta = client.chat.completions.create(
-                model="llama-3.1-70b-versatile",
-                messages=mensajes,
-                temperature=0.7,
-                max_tokens=500
-            )
-
+        # Primera llamada con rotación automática de modelos vigentes
+        respuesta, modelo_activo = llamar_groq_con_respaldo(mensajes, usar_herramientas=True)
         mensaje_ia = respuesta.choices[0].message
 
         # Si el modelo decide investigar en internet antes de responder
@@ -144,7 +161,7 @@ def webhook():
                     })
 
             segunda_respuesta = client.chat.completions.create(
-                model="llama-3.1-70b-versatile",
+                model=modelo_activo,
                 messages=mensajes,
                 temperature=0.7,
                 max_tokens=500
